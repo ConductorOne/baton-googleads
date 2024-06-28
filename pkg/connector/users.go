@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -84,9 +85,10 @@ func (u *userBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	it := c.Search(ctx, req)
 	for {
 		resp, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
+
 		if err != nil {
 			return nil, "", nil, fmt.Errorf("error iterating over google ads results: %w", err)
 		}

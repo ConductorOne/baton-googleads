@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -95,7 +96,10 @@ func (r *roleBuilder) Entitlements(_ context.Context, resource *v2.Resource, _ *
 }
 
 func (r *roleBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	query := fmt.Sprintf(`SELECT customer_user_access.user_id, customer_user_access.email_address, customer_user_access.access_role FROM customer_user_access WHERE customer_user_access.access_role = "%s"`, resource.Id.Resource)
+	query := fmt.Sprintf(
+		`SELECT customer_user_access.user_id, customer_user_access.email_address, customer_user_access.access_role FROM customer_user_access WHERE customer_user_access.access_role = "%s"`,
+		resource.Id.Resource,
+	)
 	headers := metadata.Pairs(
 		"developer-token", r.developerToken,
 	)
@@ -122,9 +126,10 @@ func (r *roleBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken 
 	var rv []*v2.Grant
 	for {
 		resp, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
+
 		if err != nil {
 			return nil, "", nil, fmt.Errorf("error iterating over google ads results: %w", err)
 		}
