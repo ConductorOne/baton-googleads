@@ -191,6 +191,16 @@ func (c *connectorRunner) Close(ctx context.Context) error {
 
 type Option func(ctx context.Context, cfg *runnerConfig) error
 
+type getTicketConfig struct {
+	ticketID string
+}
+
+type listTicketSchemasConfig struct{}
+
+type createTicketConfig struct {
+	templatePath string
+}
+
 type grantConfig struct {
 	entitlementID string
 	principalType string
@@ -201,18 +211,44 @@ type revokeConfig struct {
 	grantID string
 }
 
+type createAccountConfig struct {
+	login string
+	email string
+}
+
+type deleteResourceConfig struct {
+	resourceId   string
+	resourceType string
+}
+
+type rotateCredentialsConfig struct {
+	resourceId   string
+	resourceType string
+}
+
+type eventStreamConfig struct {
+}
+
 type runnerConfig struct {
-	rlCfg               *ratelimitV1.RateLimiterConfig
-	rlDescriptors       []*ratelimitV1.RateLimitDescriptors_Entry
-	onDemand            bool
-	c1zPath             string
-	clientAuth          bool
-	clientID            string
-	clientSecret        string
-	provisioningEnabled bool
-	grantConfig         *grantConfig
-	revokeConfig        *revokeConfig
-	tempDir             string
+	rlCfg                   *ratelimitV1.RateLimiterConfig
+	rlDescriptors           []*ratelimitV1.RateLimitDescriptors_Entry
+	onDemand                bool
+	c1zPath                 string
+	clientAuth              bool
+	clientID                string
+	clientSecret            string
+	provisioningEnabled     bool
+	ticketingEnabled        bool
+	grantConfig             *grantConfig
+	revokeConfig            *revokeConfig
+	eventFeedConfig         *eventStreamConfig
+	tempDir                 string
+	createAccountConfig     *createAccountConfig
+	deleteResourceConfig    *deleteResourceConfig
+	rotateCredentialsConfig *rotateCredentialsConfig
+	createTicketConfig      *createTicketConfig
+	listTicketSchemasConfig *listTicketSchemasConfig
+	getTicketConfig         *getTicketConfig
 }
 
 // WithRateLimiterConfig sets the RateLimiterConfig for a runner.
@@ -322,6 +358,42 @@ func WithOnDemandRevoke(c1zPath string, grantID string) Option {
 	}
 }
 
+func WithOnDemandCreateAccount(c1zPath string, login string, email string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.c1zPath = c1zPath
+		cfg.createAccountConfig = &createAccountConfig{
+			login: login,
+			email: email,
+		}
+		return nil
+	}
+}
+
+func WithOnDemandDeleteResource(c1zPath string, resourceId string, resourceType string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.c1zPath = c1zPath
+		cfg.deleteResourceConfig = &deleteResourceConfig{
+			resourceId:   resourceId,
+			resourceType: resourceType,
+		}
+		return nil
+	}
+}
+
+func WithOnDemandRotateCredentials(c1zPath string, resourceId string, resourceType string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.c1zPath = c1zPath
+		cfg.rotateCredentialsConfig = &rotateCredentialsConfig{
+			resourceId:   resourceId,
+			resourceType: resourceType,
+		}
+		return nil
+	}
+}
+
 func WithOnDemandSync(c1zPath string) Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.onDemand = true
@@ -329,10 +401,52 @@ func WithOnDemandSync(c1zPath string) Option {
 		return nil
 	}
 }
+func WithOnDemandEventStream() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.eventFeedConfig = &eventStreamConfig{}
+		return nil
+	}
+}
 
 func WithProvisioningEnabled() Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.provisioningEnabled = true
+		return nil
+	}
+}
+
+func WithTicketingEnabled() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.ticketingEnabled = true
+		return nil
+	}
+}
+
+func WithCreateTicket(templatePath string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.createTicketConfig = &createTicketConfig{
+			templatePath: templatePath,
+		}
+		return nil
+	}
+}
+
+func WithListTicketSchemas() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.listTicketSchemasConfig = &listTicketSchemasConfig{}
+		return nil
+	}
+}
+
+func WithGetTicket(ticketID string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.getTicketConfig = &getTicketConfig{
+			ticketID: ticketID,
+		}
 		return nil
 	}
 }
@@ -367,6 +481,10 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		wrapperOpts = append(wrapperOpts, connector.WithProvisioningEnabled())
 	}
 
+	if cfg.ticketingEnabled {
+		wrapperOpts = append(wrapperOpts, connector.WithTicketingEnabled())
+	}
+
 	cw, err := connector.NewWrapper(ctx, c, wrapperOpts...)
 	if err != nil {
 		return nil, err
@@ -375,7 +493,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 	runner.cw = cw
 
 	if cfg.onDemand {
-		if cfg.c1zPath == "" {
+		if cfg.c1zPath == "" && cfg.eventFeedConfig == nil && cfg.createTicketConfig == nil && cfg.listTicketSchemasConfig == nil && cfg.getTicketConfig == nil {
 			return nil, errors.New("c1zPath must be set when in on-demand mode")
 		}
 
@@ -393,6 +511,23 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		case cfg.revokeConfig != nil:
 			tm = local.NewRevoker(ctx, cfg.c1zPath, cfg.revokeConfig.grantID)
 
+		case cfg.createAccountConfig != nil:
+			tm = local.NewCreateAccountManager(ctx, cfg.c1zPath, cfg.createAccountConfig.login, cfg.createAccountConfig.email)
+
+		case cfg.deleteResourceConfig != nil:
+			tm = local.NewResourceDeleter(ctx, cfg.c1zPath, cfg.deleteResourceConfig.resourceId, cfg.deleteResourceConfig.resourceType)
+
+		case cfg.rotateCredentialsConfig != nil:
+			tm = local.NewCredentialRotator(ctx, cfg.c1zPath, cfg.rotateCredentialsConfig.resourceId, cfg.rotateCredentialsConfig.resourceType)
+
+		case cfg.eventFeedConfig != nil:
+			tm = local.NewEventFeed(ctx)
+		case cfg.createTicketConfig != nil:
+			tm = local.NewTicket(ctx, cfg.createTicketConfig.templatePath)
+		case cfg.listTicketSchemasConfig != nil:
+			tm = local.NewListTicketSchema(ctx)
+		case cfg.getTicketConfig != nil:
+			tm = local.NewGetTicket(ctx, cfg.getTicketConfig.ticketID)
 		default:
 			tm, err = local.NewSyncer(ctx, cfg.c1zPath, local.WithTmpDir(cfg.tempDir))
 			if err != nil {

@@ -1,197 +1,234 @@
-# Copyright 2019 The Libc Authors. All rights reserved.
+# Copyright 2024 The Libc Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all bench build_all_targets clean cover cpu editor internalError later mem nuke todo edit work devbench \
-	darwin_amd64 \
-	darwin_arm64 \
-	linux_386 \
-	linux_amd64 \
-	linux_arm \
-	linux_arm64 \
-	strace \
+.PHONY:	all build_all_targets check clean download edit editor generate dev membrk-test test work xtest short-test xlibc libc-test surface
 
+SHELL=/bin/bash -o pipefail	
 
-grep=--include=*.go --include=*.l --include=*.y --include=*.yy --include=*.qbe --include=*.ssa
-ngrep='internalError\|TODOOK'
-log=log-$(shell go env GOOS)-$(shell go env GOARCH)
+DIR = /tmp/libc
+TAR = musl-7ada6dde6f9dc6a2836c3d92c2f762d35fd229e0.tar.gz
+URL = https://git.musl-libc.org/cgit/musl/snapshot/$(TAR)
+MSVCRT = msvcrt_windows_amd64.go
 
-all:
-	date
-	go version 2>&1 | tee $(log)
-	go generate
-	gofmt -l -s -w *.go
-	go install -v ./...
-	go test
-	go test 2>&1 -timeout 1h | tee -a $(log)
-	# go vet -unsafeptr=false 2>&1 | grep -v $(ngrep) || true
-	# golint 2>&1 | grep -v $(ngrep) || true
-	# make todo
-	# misspell *.go
-	# staticcheck || true
-	grep -n 'FAIL\|PASS' $(log)
-	go version
-	date 2>&1 | tee -a $(log)
+all: editor
+	golint 2>&1
+	staticcheck 2>&1
 
 build_all_targets:
 	./build_all_targets.sh
 	echo done
 
-darwin_amd64:
-	@echo "Should be executed only on darwin/amd64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-darwin_arm64:
-	@echo "Should be executed only on darwin/arm64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-# only on freebsd/amd64
-freebsd_amd64:
-	@echo "Should be executed only on freebsd/amd64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-# only on freebsd/386
-freebsd_386:
-	@echo "Should be executed only on freebsd/386."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-# only on freebsd/arm
-freebsd_arm:
-	@echo "Should be executed only on freebsd/arm."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-freebsd_arm64:
-	go run addport.go freebsd_amd64 freebsd_arm64
-	go build -v ./...
-
-# only on netbsd/amd64
-netbsd_amd64:
-	@echo "Should be executed only on netbsd/amd64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-# only on netbsd/arm
-netbsd_arm:
-	@echo "Should be executed only on netbsd/arm."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-linux_amd64:
-	@echo "Should be executed only on linux/amd64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-linux_386:
-	CCGO_CPP=i686-linux-gnu-cpp TARGET_GOOS=linux TARGET_GOARCH=386 go generate
-	GOOS=linux GOARCH=386 go build -v ./...
-
-linux_arm:
-	CCGO_CPP=arm-linux-gnueabi-cpp TARGET_GOOS=linux TARGET_GOARCH=arm go generate
-	GOOS=linux GOARCH=arm go build -v ./...
-
-linux_arm64:
-	CCGO_CPP=aarch64-linux-gnu-cpp TARGET_GOOS=linux TARGET_GOARCH=arm64 go generate
-	GOOS=linux GOARCH=arm64 go build -v ./...
-
-linux_s390x:
-	CCGO_CPP=s390x-linux-gnu-cpp TARGET_GOOS=linux TARGET_GOARCH=s390x go generate
-	GOOS=linux GOARCH=s390x go build -v ./...
-
-linux_ppc64le:
-	CCGO_CPP=powerpc64le-linux-gnu-cpp TARGET_GOOS=linux TARGET_GOARCH=ppc64le go generate
-	GOOS=linux GOARCH=ppc64le go build -v ./...
-
-# only on openbsd/amd64
-openbsd_amd64:
-	@echo "Should be executed only on openbsd/amd64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-	#
-# only on openbsd/386
-openbsd_386:
-	@echo "Should be executed only on openbsd/386."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-	
-# only on openbsd/arm64
-openbsd_arm64:
-	@echo "Should be executed only on openbsd/arm64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-windows_amd64:
-	@echo "Should be executed only on windows/amd64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-windows_arm64:
-	@echo "Should be executed only on windows/arm64."
-	go generate 2>&1 | tee log-generate
-	go build -v ./...
-
-windows_386:
-	@echo "Should be executed only on linux/amd64."
-	CCGO_CPP=i686-w64-mingw32-cpp TARGET_GOOS=windows TARGET_GOARCH=386 go generate
-	GOOS=windows GOARCH=386 go build -v ./...
-
-all_targets: linux_amd64 linux_386 linux_arm linux_arm64 linux_s390x # windows_amd64 windows_386
-	echo done
-
-devbench:
-	date 2>&1 | tee log-devbench
-	go test -timeout 24h -dev -run @ -bench . 2>&1 | tee -a log-devbench
-	grep -n 'FAIL\|SKIP' log-devbench || true
-
-bench:
-	date 2>&1 | tee log-bench
-	go test -timeout 24h -v -run '^[^E]' -bench . 2>&1 | tee -a log-bench
-	grep -n 'FAIL\|SKIP' log-bench || true
-
 clean:
+	rm -f log-* cpu.test mem.test *.out
+	git clean -fd
+	find testdata/nsz.repo.hu/ -name \*.go -delete
+	make -C testdata/nsz.repo.hu/libc-test/ cleanall
 	go clean
-	rm -f *~ *.test *.out
 
-cover:
-	t=$(shell mktemp) ; go test -coverprofile $$t && go tool cover -html $$t && unlink $$t
+check:
+	staticcheck 2>&1 | grep -v U1000
 
-cpu: clean
-	go test -run @ -bench . -cpuprofile cpu.out
-	go tool pprof -lines *.test cpu.out
+download:
+	@if [ ! -f $(TAR) ]; then wget $(URL) ; fi
 
 edit:
 	@touch log
-	@if [ -f "Session.vim" ]; then novim -S & else novim -p Makefile libc.go & fi
+	@if [ -f "Session.vim" ]; then novim -S & else novim -p Makefile all_musl_test.go generator.go libc.go libc_musl.go & fi
 
 editor:
-	# go generate 2>&1 | tee log
-	gofmt -l -s -w *.go
-	go test -short 2>&1 | tee -a log
-	go install -v ./...
-	go build -o /dev/null generate.go
-	go build -o /dev/null strace.go
+	gofmt -l -s -w *.go 2>&1 | tee log-editor
+	go test -c -o /dev/null 2>&1 | tee -a log-editor
+	go install -v  2>&1 | tee -a log-editor
+	go build -o /dev/null generator*.go
 
-later:
-	@grep -n $(grep) LATER * || true
-	@grep -n $(grep) MAYBE * || true
+msvcrt:
+	echo -n > log-generate
+	ccgo -v4 \
+		--cpp=$(shell which x86_64-w64-mingw32-gcc) \
+		--goos=windows \
+		--package-name libc \
+		--prefix-external=X \
+		--prefix-field=F \
+		--prefix-static-internal=_ \
+		--prefix-static-none=_ \
+		--prefix-tagged-struct=T \
+		--prefix-tagged-union=T \
+		--prefix-typename=T \
+		--winapi=stdlib.h \
+		--winapi=string.h \
+		--winapi=time.h \
+		--winapi=wchar.h \
+		-build-lines=" " \
+		-eval-all-macros \
+		-hide __acrt_iob_func \
+		-hide __mingw_strtod \
+		-hide __mingw_vfwprintf \
+		-hide __mingw_vfwscanf \
+		-hide __mingw_vsnwprintf \
+		-hide __mingw_vswscanf \
+		-hide _byteswap_uint64 \
+		-hide _byteswap_ulong \
+		-hide _errno \
+		-hide _exit \
+		-hide _gmtime64 \
+		-hide _localtime64 \
+		-hide _mktime64 \
+		-hide _set_abort_behavior \
+		-hide _snwprintf \
+		-hide _strdup \
+		-hide _stricmp \
+		-hide _strnicmp \
+		-hide _time64 \
+		-hide _vsnwprintf \
+		-hide _wcsicmp \
+		-hide _wcsnicmp \
+		-hide _wgetenv \
+		-hide _wopen \
+		-hide _wputenv \
+		-hide _wtoi \
+		-hide _wunlink \
+		-hide abort \
+		-hide abs \
+		-hide atexit \
+		-hide atof \
+		-hide atoi \
+		-hide atol \
+		-hide bsearch \
+		-hide calloc \
+		-hide div \
+		-hide exit \
+		-hide free \
+		-hide getenv \
+		-hide labs \
+		-hide ldiv \
+		-hide llabs \
+		-hide lldiv \
+		-hide malloc \
+		-hide mblen \
+		-hide mbstowcs \
+		-hide mbtowc \
+		-hide memchr \
+		-hide memcmp \
+		-hide memcpy \
+		-hide memmove \
+		-hide memset \
+		-hide perror \
+		-hide putenv \
+		-hide qsort \
+		-hide rand \
+		-hide realloc \
+		-hide strcasecmp \
+		-hide strcat \
+		-hide strchr \
+		-hide strcmp \
+		-hide strcpy \
+		-hide strcspn \
+		-hide strdup \
+		-hide strerror \
+		-hide strftime \
+		-hide strlen \
+		-hide strncmp \
+		-hide strncpy \
+		-hide strpbrk \
+		-hide strrchr \
+		-hide strspn \
+		-hide strstr \
+		-hide strtol \
+		-hide strtoul \
+		-hide strtoull \
+		-hide system \
+		-hide tzset \
+		-hide wcrtomb \
+		-hide wcschr \
+		-hide wcscmp \
+		-hide wcscpy \
+		-hide wcsicmp \
+		-hide wcslen \
+		-hide wcsncmp \
+		-hide wcsrtombs \
+		-hide wcstombs \
+		-hide wctomb \
+		-import syscall \
+		-o $(MSVCRT) \
+		--prefix-macro m \
+		libmsvcrt.c \
+		2>&1 | tee -a log-generate
+	sed -i '/"modernc.org\/libc"/d' $(MSVCRT)
+	sed -i 's/\<libc\>\.//g' $(MSVCRT)
+	sed -i 's/\<dll\>\./modcrt./g' $(MSVCRT)
+	GOOS=windows go build -v ./... 2>&1 | tee -a log-generate
 
-mem: clean
-	go test -v -run ParserCS -memprofile mem.out -timeout 24h
-	go tool pprof -lines -web -alloc_space *.test mem.out
+generate: download
+	mkdir -p $(DIR) || true
+	rm -rf $(DIR)/*
+	GO_GENERATE_DIR=$(DIR) go run generator*.go 2>&1 | tee log-generate
+	go build -v
+	# go install github.com/mdempsky/unconvert@latest
+	go build -v 2>&1 | tee -a log-generate
+	go test -v -short -count=1 ./... | tee -a log-generate
+	git status | tee -a log-generate
+	grep 'TRC\|TODO\|ERRORF\|FAIL' log-generate || true
 
-nuke: clean
-	go clean -i
+dev: download
+	mkdir -p $(DIR) || true
+	rm -rf $(DIR)/*
+	echo -n > /tmp/ccgo.log
+	GO_GENERATE_DIR=$(DIR) GO_GENERATE_DEV=1 go run -tags=ccgo.dmesg,ccgo.assert generator*.go 2>&1 | tee log-generate
+	go build -v | tee -a log-generate
+	go test -v -short -count=1 ./... | tee -a log-generate
+	git status | tee -a log-generate
+	grep 'TRC\|TODO\|ERRORF\|FAIL' log-generate || true
+	grep 'TRC\|TODO\|ERRORF\|FAIL' /tmp/ccgo.log || true
 
-todo:
-	@grep -nr $(grep) ^[[:space:]]*_[[:space:]]*=[[:space:]][[:alpha:]][[:alnum:]]* * | grep -v $(ngrep) || true
-	@grep -nr $(grep) 'TODO\|panic' * | grep -v $(ngrep) || true
-	@grep -nr $(grep) BUG * | grep -v $(ngrep) || true
-	@grep -nr $(grep) [^[:alpha:]]println * | grep -v $(ngrep) || true
-	@grep -nir $(grep) 'work.*progress' || true
+membrk-test:
+	echo -n > /tmp/ccgo.log
+	touch log-test
+	cp log-test log-test0
+	go test -v -timeout 24h -count=1 -tags=libc.membrk 2>&1 | tee log-test
+	grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true 2>&1 | tee -a log-test
+
+test:
+	echo -n > /tmp/ccgo.log
+	touch log-test
+	cp log-test log-test0
+	go test -v -timeout 24h -count=1 2>&1 | tee log-test
+
+short-test:
+	echo -n > /tmp/ccgo.log
+	touch log-test
+	cp log-test log-test0
+	go test -v -timeout 24h -count=1 -short 2>&1 | tee log-test
+	grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true 2>&1 | tee -a log-test
+
+xlibc:
+	echo -n > /tmp/ccgo.log
+	touch log-test
+	cp log-test log-test0
+	go test -v -timeout 24h -count=1 -tags=ccgo.dmesg,ccgo.assert 2>&1 -run TestLibc | tee log-test
+	grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true 2>&1 | tee -a log-test
+
+xpthread:
+	echo -n > /tmp/ccgo.log
+	touch log-test
+	cp log-test log-test0
+	go test -v -timeout 24h -count=1 2>&1 -run TestLibc -re pthread | tee log-test
+	grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true 2>&1 | tee -a log-test
+
+libc-test:
+	echo -n > /tmp/ccgo.log
+	touch log-test
+	cp log-test log-test0
+	go test -v -timeout 24h -count=1 2>&1 -run TestLibc | tee log-test
+	# grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true 2>&1 | tee -a log-test
+	grep -o 'undefined: \<.*\>' log-test | sort -u
+
+xtest:
+	echo -n > /tmp/ccgo.log
+	touch log-test
+	cp log-test log-test0
+	go test -v -timeout 24h -count=1 -tags=ccgo.dmesg,ccgo.assert 2>&1 | tee log-test
+	grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true 2>&1 | tee -a log-test
 
 work:
 	rm -f go.work*
@@ -201,6 +238,6 @@ work:
 	go work use ../ccgo/v3
 	go work use ../cc/v4
 
-strace:
-	go run strace.go
-	go build -v ./...
+surface:
+	surface > surface.new
+	surface surface.old surface.new > log-todo-surface || true
