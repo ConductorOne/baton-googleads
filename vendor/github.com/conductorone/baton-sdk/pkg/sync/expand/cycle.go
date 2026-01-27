@@ -1,73 +1,114 @@
 package expand
 
 import (
-	"reflect"
+	"context"
 
+	"github.com/conductorone/baton-sdk/pkg/sync/expand/scc"
 	mapset "github.com/deckarep/golang-set/v2"
 )
 
-// GetCycles given an entitlements graph, get a list of every contained cycle.
-func (g *EntitlementGraph) GetCycles() ([][]int, bool) {
-	rv := make([][]int, 0)
-	for nodeID := range g.Nodes {
-		edges, ok := g.SourcesToDestinations[nodeID]
-		if !ok || len(edges) == 0 {
-			continue
-		}
-		cycle, isCycle := g.getCycle([]int{nodeID})
-		if isCycle && !isInCycle(cycle, rv) {
-			rv = append(rv, cycle)
-		}
+// GetFirstCycle given an entitlements graph, return a cycle by node ID if it
+// exists. Returns nil if no cycle exists. If there is a single
+// node pointing to itself, that will count as a cycle.
+func (g *EntitlementGraph) GetFirstCycle(ctx context.Context) []int {
+	if g.HasNoCycles {
+		return nil
 	}
-
-	return rv, len(rv) > 0
+	comps, _ := g.ComputeCyclicComponents(ctx)
+	if len(comps) == 0 {
+		return nil
+	}
+	return comps[0]
 }
 
-func isInCycle(newCycle []int, cycles [][]int) bool {
-	for _, cycle := range cycles {
-		if len(cycle) > 0 && reflect.DeepEqual(cycle, newCycle) {
-			return true
+// HasCycles returns true if the graph contains any cycle.
+func (g *EntitlementGraph) HasCycles(ctx context.Context) bool {
+	if g.HasNoCycles {
+		return false
+	}
+	comps, _ := g.ComputeCyclicComponents(ctx)
+	return len(comps) > 0
+}
+
+func (g *EntitlementGraph) cycleDetectionHelper(
+	ctx context.Context,
+	nodeID int,
+) ([]int, bool) {
+	reach := g.reachableFrom(nodeID)
+	if len(reach) == 0 {
+		return nil, false
+	}
+	fg := filteredGraph{g: g, include: func(id int) bool { _, ok := reach[id]; return ok }}
+	groups, _ := scc.CondenseFWBW(ctx, fg, scc.DefaultOptions())
+	for _, comp := range groups {
+		if len(comp) > 1 || (len(comp) == 1 && g.hasSelfLoop(comp[0])) {
+			return comp, true
 		}
+	}
+	return nil, false
+}
+
+func (g *EntitlementGraph) FixCycles(ctx context.Context) error {
+	comps, _ := g.ComputeCyclicComponents(ctx)
+	return g.FixCyclesFromComponents(ctx, comps)
+}
+
+// ComputeCyclicComponents runs SCC once and returns only cyclic components.
+// A component is cyclic if len>1 or a singleton with a self-loop.
+func (g *EntitlementGraph) ComputeCyclicComponents(ctx context.Context) ([][]int, *scc.Metrics) {
+	if g.HasNoCycles {
+		return nil, nil
+	}
+	groups, metrics := scc.CondenseFWBW(ctx, g, scc.DefaultOptions())
+	cyclic := make([][]int, 0)
+	for _, comp := range groups {
+		if len(comp) > 1 || (len(comp) == 1 && g.hasSelfLoop(comp[0])) {
+			cyclic = append(cyclic, comp)
+		}
+	}
+	return cyclic, metrics
+}
+
+// hasSelfLoop reports whether a node has a self-edge.
+func (g *EntitlementGraph) hasSelfLoop(id int) bool {
+	if row, ok := g.SourcesToDestinations[id]; ok {
+		_, ok := row[id]
+		return ok
 	}
 	return false
 }
 
-func shift(arr []int, n int) []int {
-	for i := 0; i < n; i++ {
-		arr = append(arr[1:], arr[0])
-	}
-	return arr
+// filteredGraph restricts EntitlementGraph iteration to nodes for which include(id) is true.
+type filteredGraph struct {
+	g       *EntitlementGraph
+	include func(int) bool
 }
 
-func (g *EntitlementGraph) getCycle(visits []int) ([]int, bool) {
-	if len(visits) == 0 {
-		return nil, false
+func (fg filteredGraph) ForEachNode(fn func(id int) bool) {
+	for id := range fg.g.Nodes {
+		if fg.include != nil && !fg.include(id) {
+			continue
+		}
+		if !fn(id) {
+			return
+		}
 	}
-	nodeId := visits[len(visits)-1]
-	for descendantId := range g.SourcesToDestinations[nodeId] {
-		tempVisits := make([]int, len(visits))
-		copy(tempVisits, visits)
-		if descendantId == visits[0] {
-			// shift array so that the smallest element is first
-			smallestIndex := 0
-			for i := range tempVisits {
-				if tempVisits[i] < tempVisits[smallestIndex] {
-					smallestIndex = i
-				}
-			}
-			tempVisits = shift(tempVisits, smallestIndex)
-			return tempVisits, true
-		}
-		for _, visit := range visits {
-			if visit == descendantId {
-				return nil, false
-			}
-		}
+}
 
-		tempVisits = append(tempVisits, descendantId)
-		return g.getCycle(tempVisits)
+func (fg filteredGraph) ForEachEdgeFrom(src int, fn func(dst int) bool) {
+	if fg.include != nil && !fg.include(src) {
+		return
 	}
-	return nil, false
+	if dsts, ok := fg.g.SourcesToDestinations[src]; ok {
+		for dst := range dsts {
+			if fg.include != nil && !fg.include(dst) {
+				continue
+			}
+			if !fn(dst) {
+				return
+			}
+		}
+	}
 }
 
 // removeNode obliterates a node and all incoming/outgoing edges.
@@ -75,7 +116,10 @@ func (g *EntitlementGraph) removeNode(nodeID int) {
 	// Delete from reverse mapping.
 	if node, ok := g.Nodes[nodeID]; ok {
 		for _, entitlementID := range node.EntitlementIDs {
-			delete(g.EntitlementsToNodes, entitlementID)
+			entNodeId, ok := g.EntitlementsToNodes[entitlementID]
+			if ok && entNodeId == nodeID {
+				delete(g.EntitlementsToNodes, entitlementID)
+			}
 		}
 	}
 
@@ -101,35 +145,33 @@ func (g *EntitlementGraph) removeNode(nodeID int) {
 	delete(g.SourcesToDestinations, nodeID)
 }
 
-// FixCycles if any cycles of nodes exist, merge all nodes in that cycle into a
-// single node and then repeat. Iteration ends when there are no more cycles.
-func (g *EntitlementGraph) FixCycles() error {
-	cycles, hasCycles := g.GetCycles()
-	if !hasCycles {
+// FixCyclesFromComponents merges all provided cyclic components in one pass.
+func (g *EntitlementGraph) FixCyclesFromComponents(ctx context.Context, cyclic [][]int) error {
+	if g.HasNoCycles {
 		return nil
 	}
-
-	// After fixing the cycle, all other cycles become invalid.
-	largestCycleLength, largestCycleIndex := -1, -1
-	for index, nodeIDs := range cycles {
-		newLength := len(nodeIDs)
-		if newLength > largestCycleLength {
-			largestCycleLength = newLength
-			largestCycleIndex = index
+	if len(cyclic) == 0 {
+		g.HasNoCycles = true
+		return nil
+	}
+	for _, comp := range cyclic {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		if err := g.fixCycle(comp); err != nil {
+			return err
 		}
 	}
-	if err := g.fixCycle(cycles[largestCycleIndex]); err != nil {
-		return err
-	}
-
-	// Recurse!
-	return g.FixCycles()
+	g.HasNoCycles = true
+	return nil
 }
 
 // fixCycle takes a list of Node IDs that form a cycle and merges them into a
 // single, new node.
 func (g *EntitlementGraph) fixCycle(nodeIDs []int) error {
-	entitlementIDs := mapset.NewSet[string]()
+	entitlementIDs := mapset.NewThreadUnsafeSet[string]()
 	outgoingEdgesToResourceTypeIDs := map[int]mapset.Set[string]{}
 	incomingEdgesToResourceTypeIDs := map[int]mapset.Set[string]{}
 	for _, nodeID := range nodeIDs {
@@ -145,7 +187,7 @@ func (g *EntitlementGraph) fixCycle(nodeIDs []int) error {
 					if edge, ok := g.Edges[edgeID]; ok {
 						resourceTypeIDs, ok := incomingEdgesToResourceTypeIDs[sourceNodeID]
 						if !ok {
-							resourceTypeIDs = mapset.NewSet[string]()
+							resourceTypeIDs = mapset.NewThreadUnsafeSet[string]()
 						}
 						for _, resourceTypeID := range edge.ResourceTypeIDs {
 							resourceTypeIDs.Add(resourceTypeID)
@@ -161,7 +203,7 @@ func (g *EntitlementGraph) fixCycle(nodeIDs []int) error {
 					if edge, ok := g.Edges[edgeID]; ok {
 						resourceTypeIDs, ok := outgoingEdgesToResourceTypeIDs[destinationNodeID]
 						if !ok {
-							resourceTypeIDs = mapset.NewSet[string]()
+							resourceTypeIDs = mapset.NewThreadUnsafeSet[string]()
 						}
 						for _, resourceTypeID := range edge.ResourceTypeIDs {
 							resourceTypeIDs.Add(resourceTypeID)
