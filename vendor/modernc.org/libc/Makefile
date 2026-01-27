@@ -9,7 +9,6 @@ SHELL=/bin/bash -o pipefail
 DIR = /tmp/libc
 TAR = musl-7ada6dde6f9dc6a2836c3d92c2f762d35fd229e0.tar.gz
 URL = https://git.musl-libc.org/cgit/musl/snapshot/$(TAR)
-MSVCRT = msvcrt_windows_amd64.go
 
 all: editor
 	golint 2>&1
@@ -33,153 +32,30 @@ download:
 	@if [ ! -f $(TAR) ]; then wget $(URL) ; fi
 
 edit:
-	@touch log
-	@if [ -f "Session.vim" ]; then novim -S & else novim -p Makefile all_musl_test.go generator.go libc.go libc_musl.go & fi
+	@if [ -f "Session.vim" ]; then novim -S & else novim -p Makefile go.mod builder.json & fi
 
 editor:
-	gofmt -l -s -w *.go 2>&1 | tee log-editor
-	go test -c -o /dev/null 2>&1 | tee -a log-editor
-	go install -v  2>&1 | tee -a log-editor
+	gofmt -l -s -w *.go
+	go test -c -o /dev/null
+	go install -v
 	go build -o /dev/null generator*.go
-
-msvcrt:
-	echo -n > log-generate
-	ccgo -v4 \
-		--cpp=$(shell which x86_64-w64-mingw32-gcc) \
-		--goos=windows \
-		--package-name libc \
-		--prefix-external=X \
-		--prefix-field=F \
-		--prefix-static-internal=_ \
-		--prefix-static-none=_ \
-		--prefix-tagged-struct=T \
-		--prefix-tagged-union=T \
-		--prefix-typename=T \
-		--winapi=stdlib.h \
-		--winapi=string.h \
-		--winapi=time.h \
-		--winapi=wchar.h \
-		-build-lines=" " \
-		-eval-all-macros \
-		-hide __acrt_iob_func \
-		-hide __mingw_strtod \
-		-hide __mingw_vfwprintf \
-		-hide __mingw_vfwscanf \
-		-hide __mingw_vsnwprintf \
-		-hide __mingw_vswscanf \
-		-hide _byteswap_uint64 \
-		-hide _byteswap_ulong \
-		-hide _errno \
-		-hide _exit \
-		-hide _gmtime64 \
-		-hide _localtime64 \
-		-hide _mktime64 \
-		-hide _set_abort_behavior \
-		-hide _snwprintf \
-		-hide _strdup \
-		-hide _stricmp \
-		-hide _strnicmp \
-		-hide _time64 \
-		-hide _vsnwprintf \
-		-hide _wcsicmp \
-		-hide _wcsnicmp \
-		-hide _wgetenv \
-		-hide _wopen \
-		-hide _wputenv \
-		-hide _wtoi \
-		-hide _wunlink \
-		-hide abort \
-		-hide abs \
-		-hide atexit \
-		-hide atof \
-		-hide atoi \
-		-hide atol \
-		-hide bsearch \
-		-hide calloc \
-		-hide div \
-		-hide exit \
-		-hide free \
-		-hide getenv \
-		-hide labs \
-		-hide ldiv \
-		-hide llabs \
-		-hide lldiv \
-		-hide malloc \
-		-hide mblen \
-		-hide mbstowcs \
-		-hide mbtowc \
-		-hide memchr \
-		-hide memcmp \
-		-hide memcpy \
-		-hide memmove \
-		-hide memset \
-		-hide perror \
-		-hide putenv \
-		-hide qsort \
-		-hide rand \
-		-hide realloc \
-		-hide strcasecmp \
-		-hide strcat \
-		-hide strchr \
-		-hide strcmp \
-		-hide strcpy \
-		-hide strcspn \
-		-hide strdup \
-		-hide strerror \
-		-hide strftime \
-		-hide strlen \
-		-hide strncmp \
-		-hide strncpy \
-		-hide strpbrk \
-		-hide strrchr \
-		-hide strspn \
-		-hide strstr \
-		-hide strtol \
-		-hide strtoul \
-		-hide strtoull \
-		-hide system \
-		-hide tzset \
-		-hide wcrtomb \
-		-hide wcschr \
-		-hide wcscmp \
-		-hide wcscpy \
-		-hide wcsicmp \
-		-hide wcslen \
-		-hide wcsncmp \
-		-hide wcsrtombs \
-		-hide wcstombs \
-		-hide wctomb \
-		-import syscall \
-		-o $(MSVCRT) \
-		--prefix-macro m \
-		libmsvcrt.c \
-		2>&1 | tee -a log-generate
-	sed -i '/"modernc.org\/libc"/d' $(MSVCRT)
-	sed -i 's/\<libc\>\.//g' $(MSVCRT)
-	sed -i 's/\<dll\>\./modcrt./g' $(MSVCRT)
-	GOOS=windows go build -v ./... 2>&1 | tee -a log-generate
 
 generate: download
 	mkdir -p $(DIR) || true
 	rm -rf $(DIR)/*
-	GO_GENERATE_DIR=$(DIR) go run generator*.go 2>&1 | tee log-generate
+	GO_GENERATE_DIR=$(DIR) go run generator*.go
 	go build -v
-	# go install github.com/mdempsky/unconvert@latest
-	go build -v 2>&1 | tee -a log-generate
-	go test -v -short -count=1 ./... | tee -a log-generate
-	git status | tee -a log-generate
-	grep 'TRC\|TODO\|ERRORF\|FAIL' log-generate || true
+	go test -v -short -count=1 ./...
+	git status
 
 dev: download
 	mkdir -p $(DIR) || true
 	rm -rf $(DIR)/*
 	echo -n > /tmp/ccgo.log
-	GO_GENERATE_DIR=$(DIR) GO_GENERATE_DEV=1 go run -tags=ccgo.dmesg,ccgo.assert generator*.go 2>&1 | tee log-generate
-	go build -v | tee -a log-generate
-	go test -v -short -count=1 ./... | tee -a log-generate
-	git status | tee -a log-generate
-	grep 'TRC\|TODO\|ERRORF\|FAIL' log-generate || true
-	grep 'TRC\|TODO\|ERRORF\|FAIL' /tmp/ccgo.log || true
+	GO_GENERATE_DIR=$(DIR) GO_GENERATE_DEV=1 go run -tags=ccgo.dmesg,ccgo.assert generator*.go
+	go build -v
+	go test -v -short -count=1 ./...
+	git status
 
 membrk-test:
 	echo -n > /tmp/ccgo.log
@@ -189,10 +65,7 @@ membrk-test:
 	grep -a 'TRC\|TODO\|ERRORF\|FAIL' log-test || true 2>&1 | tee -a log-test
 
 test:
-	echo -n > /tmp/ccgo.log
-	touch log-test
-	cp log-test log-test0
-	go test -v -timeout 24h -count=1 2>&1 | tee log-test
+	go test -v -timeout 24h -count=1
 
 short-test:
 	echo -n > /tmp/ccgo.log
