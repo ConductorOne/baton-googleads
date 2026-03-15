@@ -13,15 +13,14 @@ import (
 	"github.com/shenzhencenter/google-ads-pb/resources"
 	servicespb "github.com/shenzhencenter/google-ads-pb/services"
 	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc/metadata"
 )
 
 type userBuilder struct {
-	resourceType    *v2.ResourceType
-	developerToken  string
-	customerID      string
-	credentialsJSON string
+	resourceType   *v2.ResourceType
+	developerToken string
+	customerID     string
+	adsClient      *clients.GoogleAdsClient
 }
 
 func (u *userBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -68,12 +67,6 @@ func (u *userBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	}
 
 	ctx = metadata.NewOutgoingContext(ctx, headers)
-	// TODO: possible issue with credentials, need to test with different account
-	c, err := clients.NewGoogleAdsClient(ctx, option.WithCredentialsFile(u.credentialsJSON))
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("error creating google ads client: %w", err)
-	}
-	defer c.Close()
 
 	req := &servicespb.SearchGoogleAdsRequest{
 		CustomerId: u.customerID,
@@ -82,7 +75,7 @@ func (u *userBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	}
 
 	var rv []*v2.Resource
-	it := c.Search(ctx, req)
+	it := u.adsClient.Search(ctx, req)
 	for {
 		resp, err := it.Next()
 		if errors.Is(err, iterator.Done) {
@@ -114,11 +107,11 @@ func (u *userBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken 
 	return nil, "", nil, nil
 }
 
-func newUserBuilder(developerToken, customerID, credentialsJSON string) *userBuilder {
+func newUserBuilder(developerToken, customerID string, adsClient *clients.GoogleAdsClient) *userBuilder {
 	return &userBuilder{
-		resourceType:    userResourceType,
-		developerToken:  developerToken,
-		customerID:      customerID,
-		credentialsJSON: credentialsJSON,
+		resourceType:   userResourceType,
+		developerToken: developerToken,
+		customerID:     customerID,
+		adsClient:      adsClient,
 	}
 }

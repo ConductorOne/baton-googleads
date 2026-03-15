@@ -14,7 +14,6 @@ import (
 	clients "github.com/shenzhencenter/google-ads-pb/clients"
 	servicespb "github.com/shenzhencenter/google-ads-pb/services"
 	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -29,10 +28,10 @@ var roles = map[string]string{
 }
 
 type roleBuilder struct {
-	resourceType    *v2.ResourceType
-	developerToken  string
-	customerID      string
-	credentialsJSON string
+	resourceType   *v2.ResourceType
+	developerToken string
+	customerID     string
+	adsClient      *clients.GoogleAdsClient
 }
 
 func (r *roleBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -109,12 +108,6 @@ func (r *roleBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken 
 	}
 
 	ctx = metadata.NewOutgoingContext(ctx, headers)
-	// TODO: possible issue with credentials, need to test with different account
-	c, err := clients.NewGoogleAdsClient(ctx, option.WithCredentialsFile(r.credentialsJSON))
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("error creating google ads client: %w", err)
-	}
-	defer c.Close()
 
 	req := &servicespb.SearchGoogleAdsRequest{
 		CustomerId: r.customerID,
@@ -122,7 +115,7 @@ func (r *roleBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken 
 		PageToken:  pToken.Token,
 	}
 
-	it := c.Search(ctx, req)
+	it := r.adsClient.Search(ctx, req)
 	var rv []*v2.Grant
 	for {
 		resp, err := it.Next()
@@ -145,11 +138,11 @@ func (r *roleBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken 
 	return rv, "", nil, nil
 }
 
-func newRoleBuilder(developerToken, customerID, credentialsJSON string) *roleBuilder {
+func newRoleBuilder(developerToken, customerID string, adsClient *clients.GoogleAdsClient) *roleBuilder {
 	return &roleBuilder{
-		resourceType:    roleResourceType,
-		developerToken:  developerToken,
-		customerID:      customerID,
-		credentialsJSON: credentialsJSON,
+		resourceType:   roleResourceType,
+		developerToken: developerToken,
+		customerID:     customerID,
+		adsClient:      adsClient,
 	}
 }

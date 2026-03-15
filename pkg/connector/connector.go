@@ -2,24 +2,28 @@ package connector
 
 import (
 	"context"
+	"fmt"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	clients "github.com/shenzhencenter/google-ads-pb/clients"
+	"google.golang.org/api/option"
 )
 
 type Connector struct {
 	developerToken  string
 	loginCustomerID string
-	credentialsJSON string
+	adsClient       *clients.GoogleAdsClient
+	customerClient  *clients.CustomerClient
 }
 
 // ResourceSyncers returns a ResourceSyncer for each resource type that should be synced from the upstream service.
 func (c *Connector) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	return []connectorbuilder.ResourceSyncer{
-		newUserBuilder(c.developerToken, c.loginCustomerID, c.credentialsJSON),
-		newAccountBuilder(c.developerToken, c.loginCustomerID, c.credentialsJSON),
-		newRoleBuilder(c.developerToken, c.loginCustomerID, c.credentialsJSON),
+		newUserBuilder(c.developerToken, c.loginCustomerID, c.adsClient),
+		newAccountBuilder(c.developerToken, c.loginCustomerID, c.customerClient),
+		newRoleBuilder(c.developerToken, c.loginCustomerID, c.adsClient),
 	}
 }
 
@@ -39,9 +43,21 @@ func (c *Connector) Validate(ctx context.Context) (annotations.Annotations, erro
 
 // New returns a new instance of the connector.
 func New(ctx context.Context, jsonCredentialsFile, developerToken, customerID string) (*Connector, error) {
+	adsClient, err := clients.NewGoogleAdsClient(ctx, option.WithCredentialsFile(jsonCredentialsFile))
+	if err != nil {
+		return nil, fmt.Errorf("error creating google ads client: %w", err)
+	}
+
+	customerClient, err := clients.NewCustomerClient(ctx, option.WithCredentialsFile(jsonCredentialsFile))
+	if err != nil {
+		adsClient.Close()
+		return nil, fmt.Errorf("error creating customer client: %w", err)
+	}
+
 	return &Connector{
 		developerToken:  developerToken,
 		loginCustomerID: customerID,
-		credentialsJSON: jsonCredentialsFile,
+		adsClient:       adsClient,
+		customerClient:  customerClient,
 	}, nil
 }
