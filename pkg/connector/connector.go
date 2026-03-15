@@ -41,6 +41,25 @@ func (c *Connector) Validate(ctx context.Context) (annotations.Annotations, erro
 	return nil, nil
 }
 
+// Cleanup closes the cached gRPC clients.
+func (c *Connector) Cleanup(ctx context.Context) error {
+	var errs []error
+	if c.adsClient != nil {
+		if err := c.adsClient.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.customerClient != nil {
+		if err := c.customerClient.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("errors closing clients: %v", errs)
+	}
+	return nil
+}
+
 // New returns a new instance of the connector.
 func New(ctx context.Context, jsonCredentialsFile, developerToken, customerID string) (*Connector, error) {
 	adsClient, err := clients.NewGoogleAdsClient(ctx, option.WithCredentialsFile(jsonCredentialsFile))
