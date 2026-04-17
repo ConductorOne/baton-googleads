@@ -11,6 +11,10 @@ import (
 	"google.golang.org/api/option"
 )
 
+// Connector caches the gRPC clients for the lifetime of the sync. The SDK does
+// not expose a Close/Cleanup hook for the connector itself — clients are
+// released when the process exits. Partial-init failure in New is cleaned up
+// inline.
 type Connector struct {
 	developerToken  string
 	loginCustomerID string
@@ -39,25 +43,6 @@ func (c *Connector) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error)
 // to be sure that they are valid.
 func (c *Connector) Validate(ctx context.Context) (annotations.Annotations, error) {
 	return nil, nil
-}
-
-// Cleanup closes the cached gRPC clients.
-func (c *Connector) Cleanup(ctx context.Context) error {
-	var errs []error
-	if c.adsClient != nil {
-		if err := c.adsClient.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if c.customerClient != nil {
-		if err := c.customerClient.Close(); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("errors closing clients: %v", errs)
-	}
-	return nil
 }
 
 // New returns a new instance of the connector.
