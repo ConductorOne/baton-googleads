@@ -15,6 +15,7 @@ var (
 		"developer-token",
 		field.WithDescription("Your google ads developer token"),
 		field.WithRequired(true),
+		field.WithIsSecret(true),
 	)
 
 	CustomerIDField = field.StringField(
