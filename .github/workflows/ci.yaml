@@ -10,12 +10,12 @@ jobs:
     if: false  # Remove this line to enable integration tests
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
       - name: Install Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Checkout code
-        uses: actions/checkout@v6
       # Build the connector binary, then run sync-test.
       # Configure with valid entitlement/principal IDs.
       # Add additional test jobs as needed.
