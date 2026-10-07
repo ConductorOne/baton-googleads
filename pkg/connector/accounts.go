@@ -10,15 +10,14 @@ import (
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	clients "github.com/shenzhencenter/google-ads-pb/clients"
 	servicespb "github.com/shenzhencenter/google-ads-pb/services"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc/metadata"
 )
 
 type accountBuilder struct {
-	resourceType    *v2.ResourceType
-	developerToken  string
-	customerID      string
-	credentialsJSON string
+	resourceType   *v2.ResourceType
+	developerToken string
+	customerID     string
+	customerClient *clients.CustomerClient
 }
 
 func (a *accountBuilder) ResourceType(ctx context.Context) *v2.ResourceType {
@@ -50,14 +49,8 @@ func (a *accountBuilder) List(ctx context.Context, parentResourceID *v2.Resource
 	}
 
 	ctx = metadata.NewOutgoingContext(ctx, headers)
-	// TODO: possible issue with credentials, need to test with different account
-	c, err := clients.NewCustomerClient(ctx, option.WithCredentialsFile(a.credentialsJSON))
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("error creating customer client: %w", err)
-	}
-	defer c.Close()
 
-	accounts, err := c.ListAccessibleCustomers(ctx, req)
+	accounts, err := a.customerClient.ListAccessibleCustomers(ctx, req)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("error listing accounts: %w", err)
 	}
@@ -83,11 +76,11 @@ func (a *accountBuilder) Grants(ctx context.Context, resource *v2.Resource, pTok
 	return nil, "", nil, nil
 }
 
-func newAccountBuilder(developerToken, customerID, credentialsJSON string) *accountBuilder {
+func newAccountBuilder(developerToken, customerID string, customerClient *clients.CustomerClient) *accountBuilder {
 	return &accountBuilder{
-		resourceType:    accountResourceType,
-		developerToken:  developerToken,
-		customerID:      customerID,
-		credentialsJSON: credentialsJSON,
+		resourceType:   accountResourceType,
+		developerToken: developerToken,
+		customerID:     customerID,
+		customerClient: customerClient,
 	}
 }
