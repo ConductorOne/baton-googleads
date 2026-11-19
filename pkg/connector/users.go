@@ -36,7 +36,6 @@ func userResource(user *resources.CustomerUserAccess, parentResourceID *v2.Resou
 	}
 
 	userTraitOptions := []rs.UserTraitOption{
-		rs.WithUserProfile(profile),
 		rs.WithEmail(*user.EmailAddress, true),
 	}
 
@@ -46,6 +45,7 @@ func userResource(user *resources.CustomerUserAccess, parentResourceID *v2.Resou
 		user.UserId,
 		userTraitOptions,
 		rs.WithParentResourceID(parentResourceID),
+		rs.WithResourceProfile(profile),
 	)
 	if err != nil {
 		return nil, err

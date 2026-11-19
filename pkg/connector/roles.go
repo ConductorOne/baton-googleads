@@ -45,15 +45,12 @@ func roleResource(key, role string) (*v2.Resource, error) {
 		"role_id":   key,
 	}
 
-	roleOptions := []rs.RoleTraitOption{
-		rs.WithRoleProfile(profile),
-	}
-
 	ret, err := rs.NewRoleResource(
 		role,
 		roleResourceType,
 		key,
-		roleOptions,
+		nil,
+		rs.WithResourceProfile(profile),
 	)
 	if err != nil {
 		return nil, err
