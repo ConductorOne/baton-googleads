@@ -29,3 +29,5 @@ sidebarTitle: "Google Ads"
 - `credentials-json-file-path` — path to your Google service account credentials JSON file
 - `developer-token` — your Google Ads developer token
 - `customer-id` — your Google Ads customer ID
+
+The credential file must contain a Google service-account key. OAuth `authorized_user` refresh-token files and external-account federation configurations are not supported. The connector reads this file locally; a hosted launcher must keep the path operator controlled and must not let a tenant select a server file path.
