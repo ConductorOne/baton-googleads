@@ -35,7 +35,7 @@ func TestCredentialsOptionAcceptsServiceAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := json.Marshal(map[string]string{
+	fields := map[string]string{
 		"type":                        "service_account",
 		"project_id":                  "test-project",
 		"private_key_id":              "test-key",
@@ -46,13 +46,28 @@ func TestCredentialsOptionAcceptsServiceAccount(t *testing.T) {
 		"auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
 		"client_x509_cert_url":        "https://www.googleapis.com/robot/v1/metadata/x509/test",
 		"universe_domain":             "googleapis.com",
-		"token_uri":                   googlecredentialguard.TokenURL,
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	if _, err := credentialsOption(writeCredentials(t, data)); err != nil {
-		t.Fatalf("valid service account rejected: %v", err)
+	for _, input := range []struct {
+		name       string
+		tokenURI   string
+		privateKey string
+	}{
+		{"current", googlecredentialguard.TokenURL, fields["private_key"]},
+		{"console endpoint", googlecredentialguard.AccountsTokenURL, fields["private_key"]},
+		{"PKCS1 key", googlecredentialguard.AccountsTokenURL,
+			string(pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}))},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			fields["token_uri"] = input.tokenURI
+			fields["private_key"] = input.privateKey
+			data, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := credentialsOption(writeCredentials(t, data)); err != nil {
+				t.Fatalf("valid service account rejected: %v", err)
+			}
+		})
 	}
 }
 
