@@ -10,7 +10,6 @@ import (
 	rs "github.com/conductorone/baton-sdk/pkg/types/resource"
 	clients "github.com/shenzhencenter/google-ads-pb/clients"
 	servicespb "github.com/shenzhencenter/google-ads-pb/services"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -50,8 +49,11 @@ func (a *accountBuilder) List(ctx context.Context, parentResourceID *v2.Resource
 	}
 
 	ctx = metadata.NewOutgoingContext(ctx, headers)
-	// TODO: possible issue with credentials, need to test with different account
-	c, err := clients.NewCustomerClient(ctx, option.WithCredentialsFile(a.credentialsJSON))
+	credentialOption, err := credentialsOption(a.credentialsJSON)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	c, err := clients.NewCustomerClient(ctx, credentialOption)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("error creating customer client: %w", err)
 	}

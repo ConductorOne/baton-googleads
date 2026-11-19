@@ -14,7 +14,6 @@ import (
 	clients "github.com/shenzhencenter/google-ads-pb/clients"
 	servicespb "github.com/shenzhencenter/google-ads-pb/services"
 	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -109,8 +108,11 @@ func (r *roleBuilder) Grants(ctx context.Context, resource *v2.Resource, pToken 
 	}
 
 	ctx = metadata.NewOutgoingContext(ctx, headers)
-	// TODO: possible issue with credentials, need to test with different account
-	c, err := clients.NewGoogleAdsClient(ctx, option.WithCredentialsFile(r.credentialsJSON))
+	credentialOption, err := credentialsOption(r.credentialsJSON)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	c, err := clients.NewGoogleAdsClient(ctx, credentialOption)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("error creating google ads client: %w", err)
 	}
