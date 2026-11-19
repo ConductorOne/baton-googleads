@@ -7,7 +7,7 @@ import (
 var (
 	CredentialsJSONField = field.StringField(
 		"credentials-json-file-path",
-		field.WithDescription("JSON credentials file path for the Google ads account credentials"),
+		field.WithDescription("Local path to a Google service-account key JSON file"),
 		field.WithRequired(true),
 	)
 

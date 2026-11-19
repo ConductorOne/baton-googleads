@@ -13,7 +13,6 @@ import (
 	"github.com/shenzhencenter/google-ads-pb/resources"
 	servicespb "github.com/shenzhencenter/google-ads-pb/services"
 	"google.golang.org/api/iterator"
-	"google.golang.org/api/option"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -37,7 +36,6 @@ func userResource(user *resources.CustomerUserAccess, parentResourceID *v2.Resou
 	}
 
 	userTraitOptions := []rs.UserTraitOption{
-		rs.WithUserProfile(profile),
 		rs.WithEmail(*user.EmailAddress, true),
 	}
 
@@ -47,6 +45,7 @@ func userResource(user *resources.CustomerUserAccess, parentResourceID *v2.Resou
 		user.UserId,
 		userTraitOptions,
 		rs.WithParentResourceID(parentResourceID),
+		rs.WithResourceProfile(profile),
 	)
 	if err != nil {
 		return nil, err
@@ -68,8 +67,11 @@ func (u *userBuilder) List(ctx context.Context, parentResourceID *v2.ResourceId,
 	}
 
 	ctx = metadata.NewOutgoingContext(ctx, headers)
-	// TODO: possible issue with credentials, need to test with different account
-	c, err := clients.NewGoogleAdsClient(ctx, option.WithCredentialsFile(u.credentialsJSON))
+	credentialOption, err := credentialsOption(u.credentialsJSON)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	c, err := clients.NewGoogleAdsClient(ctx, credentialOption)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("error creating google ads client: %w", err)
 	}
